@@ -1,0 +1,312 @@
+---
+title: "Boston Crime Data Analysis"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+ 
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(lubridate)
+library(ggrepel)
+library(forcats)
+library(scales)
+library(dplyr)
+library(sf)
+library(mapview)
+library(ggmap)
+library(ggpubr)
+library(deforestable)
+```
+
+```{r}
+#importing the data
+boston_crime_df <- read.csv("C:\\Users\\17579\\Desktop\\Boston_Crime_Data.csv")
+```
+
+```{r}
+str(boston_crime_df)
+summary(boston_crime_df)
+```
+
+
+```{r}
+boston_crime_df$INCIDENT_NUMBER <- as.factor(boston_crime_df$INCIDENT_NUMBER)
+boston_crime_df$OFFENSE_CODE_GROUP <- as.factor(boston_crime_df$OFFENSE_CODE_GROUP)
+boston_crime_df$OFFENSE_DESCRIPTION <- as.factor(boston_crime_df$OFFENSE_DESCRIPTION)
+boston_crime_df$DISTRICT <- as.factor(boston_crime_df$DISTRICT)
+boston_crime_df$SHOOTING <- as.factor(boston_crime_df$SHOOTING)
+boston_crime_df$OCCURRED_ON_DATE <- as.Date(boston_crime_df$OCCURRED_ON_DATE, format = "%m/%d/%y")
+boston_crime_df$DAY_OF_WEEK <- as.factor(boston_crime_df$DAY_OF_WEEK)
+boston_crime_df$UCR_PART <- as.factor(boston_crime_df$UCR_PART)
+boston_crime_df$STREET <- as.factor(boston_crime_df$STREET)
+boston_crime_df$Location <- as.factor(boston_crime_df$Location)
+boston_crime_df$YEAR <- as.factor(boston_crime_df$YEAR)
+
+```
+
+### Boston's Crime Trend
+
+```{r}
+# Yearly crime trend in Boston, MA.
+
+boston_crime_df %>%
+  select(YEAR) %>%
+  group_by(YEAR) %>%
+  summarise(count_k = n()) %>%
+  ggplot()+
+  geom_bar(fill = 'blue', stat = 'identity', aes(x = YEAR, y = count_k))+
+  ggtitle("Crime Reported vs Year (Boston, MA)")+
+  ylab("No. of crimes reported")
+```
+Fewer records exist for years 2015 and 2020 as compared to rest of the years.
+ 
+```{r}
+boston_crime_df %>%
+  group_by(YEAR, MONTH) %>%
+  summarise(
+    count_crimes = n()
+  ) %>%
+  summarise(
+    average_monthly_crime = mean(count_crimes)
+  )
+```
+Similar monthly crime rate over the years.
+```{r}
+boston_crime_df %>%
+  group_by(YEAR, MONTH) %>%
+  summarise(
+    count_crimes = n()
+  ) %>%
+  ggplot(aes(x = MONTH, y = count_crimes))+
+  geom_line(color = "blue")+
+  geom_point(color = "red") +
+  scale_x_discrete(limits = month.abb)+
+  facet_grid(rows = vars(YEAR))+theme_bw()
+```
+Recording starts from June 2015 and ends at April 2020.
+Monthly crimes follows similar pattern each year.
+
+```{r}
+boston_crime_df %>%
+  mutate(weekend = if_else(DAY_OF_WEEK == "Saturday" | DAY_OF_WEEK == "Sunday", "Yes", "No")) %>%
+  group_by(MONTH, weekend) %>%
+  summarise(
+    no_of_days = n()
+  ) %>%
+  ggplot(aes(x = weekend, y = no_of_days))+
+  geom_boxplot()+
+  ggtitle("Crime Reported : Weekdays vs Weekends (Boston, MA)")+
+  ylab("No. of crimes reported")+
+  xlab("Weekend")
+```
+
+```{r}
+boston_crime_df %>%
+  group_by(MONTH, DAY_OF_WEEK) %>%
+  summarise(
+    no_of_crimes = n()
+  ) %>%
+  ggplot(aes(x = DAY_OF_WEEK, y = no_of_crimes))+
+  geom_boxplot()
+  
+```
+### Crime Pattern in Boston's Districts and Streets.
+
+```{r}
+ggplot(boston_crime_df, aes(x=fct_infreq(DISTRICT)))+
+  geom_bar(stat = "count")
+```
+
+```{r}
+b1 <- boston_crime_df %>%
+  filter(DISTRICT != "") %>%
+  group_by(DISTRICT, STREET) %>%
+  summarise(
+    countk = n()
+  ) %>%
+  arrange(DISTRICT, desc(countk))
+
+b1
+```
+
+```{r}
+
+b1 %>%
+  ggplot(aes(x = countk))+
+  geom_histogram(bins = 50, fill = "red", color = "black")+
+  scale_x_continuous(limits = c(0,1000))+
+  scale_y_continuous(limits = c(0,150))+
+  facet_wrap(~ DISTRICT, ncol = 3)+
+  theme_get()+
+  ggtitle("Crime Reported per Streets in Boston, MA")+
+  ylab("No. of Streets")+
+  xlab("No. of Reported Crimes")
+```
+
+Majority of the streets had reported less than 250 crimes during the period 2015 - 2020.
+
+
+```{r}
+b2 <- b1 %>%
+  filter(DISTRICT != "External") %>%
+  mutate(crime_rate_indicator = case_when(
+    countk > 800 ~ "high",
+    countk > 200 & countk <= 800 ~ "mid",
+    countk >0 & countk <= 200 ~ "low"
+  ))
+
+b2 %>%
+  ggplot(aes(x=fct_infreq(DISTRICT), y = countk, fill = crime_rate_indicator))+
+  geom_bar(stat = "identity")+
+  scale_fill_discrete(labels = c("Streets with > 800 crimes", "Streets with <= 800 crimes", "Streets with less than 200 crimes"))+
+  ggtitle("Crime Reported by Streets in Boston, MA")+
+  ylab("No. of Streets")+
+  xlab("Districts")
+```
+
+```{r}
+ggplot(b2, (aes(x=fct_infreq(DISTRICT), y = countk, fill = crime_rate_indicator)))+
+geom_bar(position = "fill", stat = "identity")+
+ggtitle("Graph showing Crime Rate Proportions in Streets")+
+theme(plot.title = element_text(hjust = 0.5))+
+  ylab("No. of Streets")+
+  xlab("Districts")
+```
+District D4 has the most number of streets with more than 800 reported crimes over the course of four years (2015 - 2020).
+
+### UCR Part One Crimes in Boston, MA
+
+```{r}
+boston_crime_df %>%
+  filter(UCR_PART == 'Part One') %>%
+  group_by(DISTRICT) %>%
+  summarise(
+    count_of_partone = n()
+  ) %>%
+  arrange(desc(count_of_partone))
+
+
+  
+```
+
+
+```{r}
+#most frequent Part One crimes by street
+
+b3 <- boston_crime_df %>%
+  filter(UCR_PART == "Part One") %>%
+  filter(DISTRICT != "") %>%
+  group_by(DISTRICT, OFFENSE_CODE_GROUP) %>%
+  summarise(
+    countofcrimes = n()
+  )%>%
+  arrange(DISTRICT, desc(countofcrimes))
+  
+b3
+```
+
+```{r}
+b3 %>%
+  ggplot(aes(x = OFFENSE_CODE_GROUP, y = countofcrimes))+
+  geom_bar(stat = "identity")+
+  coord_flip()+
+  facet_wrap(~DISTRICT)
+```
+
+```{r}
+# pie chart showing the proportion of part one crimes in Boston from 2016 - 2020.
+
+b4 <- b3 %>% 
+  group_by(OFFENSE_CODE_GROUP) %>%
+  arrange(desc(OFFENSE_CODE_GROUP)) %>%
+  mutate(prop = countofcrimes / sum(b3$countofcrimes) *100) %>%
+  mutate(ypos = cumsum(prop)- 1*prop )
+
+ggplot(b4, aes(x="", y=countofcrimes, fill=OFFENSE_CODE_GROUP)) +
+  geom_bar(stat="identity", width=1) +
+  coord_polar("y", start=0)+
+  theme_void()
+```
+
+
+```{r}
+boston_crime_df %>%
+  filter(UCR_PART != "" & UCR_PART != "Other")%>%
+  ggplot(aes(x = DISTRICT, fill = UCR_PART))+
+  geom_bar(position = "fill", stat = "count")+
+  ggtitle("Street Level Crime Reported by District in Boston, MA")+
+  ylab("Proportions of Streets")+
+  xlab("Districts")
+```
+
+### Finding most dangeorus streets in each district.
+
+```{r}
+street_dangerous <-boston_crime_df %>%
+  group_by(DISTRICT, STREET, UCR_PART) %>%
+  summarise(
+    street_crime = n()
+  ) %>%
+  filter(street_crime > 800 & UCR_PART == "Part One")
+street_dangerous
+```
+
+
+```{r}
+boston_crime_df %>%
+  group_by(DISTRICT, STREET, UCR_PART) %>%
+  summarise(
+    street_crime = n()
+  ) %>%
+  filter(street_crime > 800 & UCR_PART == "Part Two")
+```
+
+```{r}
+shoot <- boston_crime_df %>%
+  filter(SHOOTING == "1" | SHOOTING == "Y") %>%
+  group_by(DISTRICT, STREET) %>%
+  summarise(
+    shoot_count = n()
+  ) %>%
+  filter(shoot_count > 20) %>%
+  arrange(DISTRICT, desc(shoot_count))
+
+shoot
+```
+
+```{r}
+shoot %>%
+  filter(DISTRICT == "B2") %>%
+  filter(shoot_count > 20) %>%
+  ggplot(aes(x = STREET, y = shoot_count))+
+  geom_bar(stat = "identity")+
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1))
+```
+
+
+```{r}
+shoot %>%
+  filter(DISTRICT == "C11") %>%
+  filter(shoot_count > 20) %>%
+  ggplot(aes(x = STREET, y = shoot_count))+
+  geom_bar(stat = "identity")
+```
+
+```{r}
+
+boston_crime_df %>%
+  filter(SHOOTING == "1" | SHOOTING == "Y") %>%
+  group_by(DISTRICT, MONTH) %>%
+  summarise(
+    monthly_shooting = n()
+  ) %>%
+  ggplot(aes(x = MONTH, y = monthly_shooting, col = DISTRICT))+
+  geom_line()+
+  scale_x_discrete(limits = month.abb)+
+  ggtitle("Monthly Shooting Frequencies during 2015 - 2020")
+```
+
